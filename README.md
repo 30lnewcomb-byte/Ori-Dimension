@@ -18,23 +18,25 @@ A neural network prediction is not a safety guarantee. Printer commands must pas
 ## Initial build plan
 
 - [x] Establish the project purpose and safety boundary.
-- [ ] Generate and validate a reproducible geometry dataset.
-- [ ] Train and evaluate a small TensorFlow geometry model.
+- [x] Generate and validate a reproducible geometry dataset.
+- [x] Add a small TensorFlow geometry training baseline and held-out metrics.
+- [x] Add automated dataset tests and a GitHub Actions check.
 - [ ] Add camera/printer observation adapters.
 - [ ] Build a reasoning and action-planning layer.
 - [ ] Add a policy-gated printer adapter and simulated tests.
 - [ ] Test against the actual printer only after simulation and safety checks pass.
 
-## Geometry dataset foundation
+## Geometry dataset and training
 
-The first data generator creates labeled triangle examples from mathematical rules rather than scraping an unverified database. It produces JSON Lines (`.jsonl`) so examples can be streamed and inspected. The validator checks structural and mathematical consistency before training.
+The generator creates labeled triangle examples from mathematical rules rather than scraping an unverified database. It writes JSON Lines (`.jsonl`); the validator checks structure and mathematical consistency. Generated data and trained artifacts stay local by default.
 
     python -m pip install -r requirements.txt
     python -m src.geometry.generate_dataset --output data/generated/triangles.jsonl --count 10000 --seed 42
     python -m src.geometry.validate_dataset data/generated/triangles.jsonl
+    python -m src.geometry.train_model --dataset data/generated/triangles.jsonl --output artifacts/ori-geometry.keras --metrics artifacts/geometry-metrics.json
 
-Dataset files are generated locally and are not committed by default.
+The training script uses a deterministic 80/10/10 train/validation/test split, early stopping, and a held-out test report. This first network predicts triangle perimeter, area, and angles from three side lengths. It is a **geometry research baseline**, not a vision model or a printer-control model.
 
 ## Project status
 
-This is an early foundation, not a trained or printer-connected model yet. Training metrics, device support, and safe physical control must be verified before claiming those capabilities.
+The data generator, validator, training script, and CI checks have been added. The GitHub Actions run and an actual TensorFlow training run still need to be observed before calling this batch verified. Printer connection, camera perception, reasoning, and action execution have not been implemented yet.
