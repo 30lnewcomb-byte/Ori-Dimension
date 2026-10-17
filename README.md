@@ -1,43 +1,34 @@
 # Ori Dimension
 
-Ori Dimension is the perception, reasoning, and action system for a printer-aware AI.
+Ori Dimension is a **Vercel-hosted 3D printer size visualizer**. Its purpose is to help someone see how physically large a 3D printer really is—not just read dimensions in a spec sheet.
 
-Its intended loop is:
+This is **not a chatbot**, printer-monitoring dashboard, or printer-control system.
 
-1. **Find** — confirm the explicitly configured printer.
-2. **Look** — collect camera frames and printer telemetry.
-3. **Think** — interpret observations using geometry knowledge and task rules.
-4. **Do** — prepare an action, validate it through a separate policy, and execute only when the future control layer permits it.
+## Main goal
 
-The goal is for Ori to do the work itself. This repository contains the supporting software for data creation, training/evaluation, perception, planning, and bounded device control.
+Build a clear 3D view of a printer at a meaningful, consistent scale, using real dimensions (width, depth, and height). The visualizer should make the printer's footprint and overall size understandable at a glance.
 
-## Safety boundary
+## Intended direction
 
-A neural network prediction is not a safety guarantee. The current loop is **observe/propose only** and has no command executor. It checks an allowlist and basic connection/fault conditions, then returns a proposal for review. No physical printer command is sent by this code. A real adapter must preserve firmware protections, temperature limits, interlocks, and emergency-stop behavior.
+1. **Choose or identify a printer model** and obtain its published physical dimensions.
+2. **Represent its size in 3D** with width, depth, and height mapped consistently to the scene.
+3. **Show the scale clearly** so users can judge how much space the printer occupies.
+4. **Use geometry and TensorFlow only where they help**—for example, organizing dimension data or exploring model recognition later. A neural network is not needed to do basic, exact dimension math.
 
-## Current build status
+## Deployment
 
-- [x] Project purpose and safety boundary documented.
-- [x] Reproducible synthetic triangle dataset generator.
-- [x] Mathematical dataset validator.
-- [x] TensorFlow geometry training baseline with held-out metrics.
-- [x] Automated dataset tests and GitHub Actions checks.
-- [x] Printer adapter interface and find/look/think/propose orchestration scaffold.
-- [x] Simulated tests for approval gating, unknown actions, missing printer, disconnection, and missing configuration.
-- [ ] Run TensorFlow training and inspect its real metrics.
-- [ ] Implement and test a camera-capable adapter for the actual printer.
-- [ ] Train/evaluate visual perception using correctly labeled printer images.
-- [ ] Implement a reasoning model that uses observations and geometry tools.
-- [ ] Implement a real printer command adapter behind a strict policy layer.
-- [ ] Test hardware control only after simulation and safety checks pass.
+The web application is intended to be hosted on **Vercel**. Keep the experience focused on visualizing printer size; do not add chat, camera monitoring, or physical printer control unless the project goal is explicitly changed.
 
-## Geometry dataset and training
+## Data and accuracy
 
-The generator creates labeled triangle examples from mathematical rules rather than relying on an unverified downloaded database. It writes JSON Lines (`.jsonl`); the validator checks structure and mathematical consistency. Generated data and model artifacts stay local by default.
+- Prefer manufacturer-published dimensions and clearly record units and sources.
+- Convert units explicitly and consistently.
+- Keep the displayed model proportional to its recorded dimensions.
+- Distinguish the printer's external dimensions from build volume; they describe different things.
+- Do not invent dimensions when reliable specifications are unavailable.
 
-    python -m pip install -r requirements.txt
-    python -m src.geometry.generate_dataset --output data/generated/triangles.jsonl --count 10000 --seed 42
-    python -m src.geometry.validate_dataset data/generated/triangles.jsonl
-    python -m src.geometry.train_model --dataset data/generated/triangles.jsonl --output artifacts/ori-geometry.keras --metrics artifacts/geometry-metrics.json
+## Current repository status
 
-The first network predicts triangle perimeter, area, and angles from three side lengths. It is a **geometry research baseline**, not yet a vision model or a printer-control model. The GitHub Actions dataset and orchestration tests have passed; the TensorFlow training run itself has not yet been performed.
+The repository currently contains a small Python geometry dataset generator, validator, and TensorFlow training experiment focused on triangles. Those are **not yet a printer-size visualizer**, and the triangle prediction model does not itself make a printer appear at the correct scale.
+
+The next implementation priority is the actual Vercel web experience: printer dimension data, a true-to-scale 3D representation, and readable size references. Keep the project focused on that deliverable.
