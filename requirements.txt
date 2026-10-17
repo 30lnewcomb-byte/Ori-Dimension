@@ -1,1 +1,3 @@
-# Python 3.11 is recommended for a compatible TensorFlow environment.\ntensorflow>=2.16,<2.20\n
+# Python 3.11 is recommended for a compatible TensorFlow environment.
+tensorflow>=2.16,<2.20
+numpy>=1.26,<3
