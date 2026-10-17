@@ -34,13 +34,12 @@ function SimpleObject({ spec }: { spec: ObjectSpec }) {
 function GeneratedObject({ url, spec }: { url: string; spec: ObjectSpec }) {
   const { scene } = useGLTF(url);
   const object = useMemo(() => scene.clone(true), [scene]);
-  const dimensions = [spec.widthMm / 1000, spec.heightMm / 1000, spec.depthMm / 1000];
   const { scale, minY } = useMemo(() => {
     object.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(object);
     const size = box.getSize(new THREE.Vector3());
     return {
-      scale: [size.x ? dimensions[0] / size.x : 1, size.y ? dimensions[1] / size.y : 1, size.z ? dimensions[2] / size.z : 1] as [number,number,number],
+      scale: [size.x ? (spec.widthMm / 1000) / size.x : 1, size.y ? (spec.heightMm / 1000) / size.y : 1, size.z ? (spec.depthMm / 1000) / size.z : 1] as [number,number,number],
       minY: box.min.y
     };
   }, [object, spec.widthMm, spec.heightMm, spec.depthMm]);
