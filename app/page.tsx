@@ -2,8 +2,7 @@
 
 import { Suspense, useMemo, useState } from "react";
 import { Canvas } from "@react-three/fiber";
-import { ContactShadows, Environment, OrbitControls } from "@react-three/drei";
-import * as THREE from "three";
+import { ContactShadows, OrbitControls } from "@react-three/drei";
 
 type ReferenceKind = "person" | "desk" | "chair" | "door";
 
@@ -203,8 +202,9 @@ function Scene({
   const printerD = depthMm / 1000;
   const ref = REFERENCES[reference];
   const gap = 0.32;
-  const centerDistance = printerW / 2 + ref.width / 2 + gap;
   const totalWidth = printerW + ref.width + gap;
+  const printerX = -totalWidth / 2 + printerW / 2;
+  const referenceX = totalWidth / 2 - ref.width / 2;
   const floorWidth = Math.max(2.8, totalWidth + 1.2);
   const floorDepth = Math.max(2.2, Math.max(printerD, ref.depth) + 1.5);
 
@@ -220,14 +220,13 @@ function Scene({
         <meshStandardMaterial color="#202a34" roughness={0.88} />
       </mesh>
       <gridHelper args={[floorWidth, Math.round(floorWidth * 10), "#465360", "#2d3945"]} position={[0, 0.002, 0]} />
-      <group position={[-centerDistance / 2, 0, 0]}>
+      <group position={[printerX, 0, 0]}>
         <PrinterModel width={printerW} height={printerH} depth={printerD} />
       </group>
-      <group position={[centerDistance / 2, 0, 0]}>
+      <group position={[referenceX, 0, 0]}>
         <ReferenceObject kind={reference} />
       </group>
       <ContactShadows position={[0, 0.004, 0]} opacity={0.42} scale={Math.max(3, totalWidth + 1)} blur={2.4} far={3} />
-      <Environment preset="city" />
       <OrbitControls
         makeDefault
         target={[0, Math.max(printerH, ref.height) * 0.48, 0]}
