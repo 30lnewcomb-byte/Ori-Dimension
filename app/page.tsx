@@ -1,384 +1,169 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { Canvas } from "@react-three/fiber";
-import { ContactShadows, OrbitControls } from "@react-three/drei";
+import { ContactShadows, OrbitControls, useGLTF } from "@react-three/drei";
+import * as THREE from "three";
 
-type ReferenceKind = "person" | "desk" | "chair" | "door";
+type ObjectSpec = { id: string; name: string; widthMm: number; heightMm: number; depthMm: number; note: string; prompt: string };
+type SearchResult = { title: string; url: string; description: string };
 
-const REFERENCES: Record<
-  ReferenceKind,
-  { name: string; note: string; width: number; height: number; depth: number }
-> = {
-  person: {
-    name: "Person",
-    note: "Approx. 1.70 m tall",
-    width: 0.46,
-    height: 1.7,
-    depth: 0.28
-  },
-  desk: {
-    name: "Desk",
-    note: "Approx. 1.20 × 0.60 × 0.74 m",
-    width: 1.2,
-    height: 0.74,
-    depth: 0.6
-  },
-  chair: {
-    name: "Chair",
-    note: "Approx. 0.45 × 0.90 × 0.45 m",
-    width: 0.45,
-    height: 0.9,
-    depth: 0.45
-  },
-  door: {
-    name: "Door",
-    note: "Approx. 0.91 × 2.03 m",
-    width: 0.91,
-    height: 2.03,
-    depth: 0.045
-  }
-};
-
-function PrinterModel({
-  width,
-  height,
-  depth
-}: {
-  width: number;
-  height: number;
-  depth: number;
-}) {
-  const dark = "#202a35";
-  const metal = "#8b9aa8";
-  const bed = "#35495a";
-  const baseH = height * 0.16;
-  const frame = Math.max(0.012, Math.min(width, depth) * 0.055);
-  const postH = Math.max(0.02, height - baseH - frame);
-  const bedY = baseH + height * 0.12;
-  const gantryY = height - frame * 1.4;
-
-  return (
-    <group>
-      {/* Every part is contained by the dimensions supplied to this model. */}
-      <mesh position={[0, baseH / 2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[width, baseH, depth]} />
-        <meshStandardMaterial color={dark} roughness={0.42} metalness={0.24} />
-      </mesh>
-      <mesh position={[0, bedY, 0]} castShadow receiveShadow>
-        <boxGeometry args={[width * 0.78, frame * 0.55, depth * 0.72]} />
-        <meshStandardMaterial color={bed} roughness={0.62} metalness={0.2} />
-      </mesh>
-      <mesh position={[-width / 2 + frame / 2, baseH + postH / 2, -depth * 0.34]} castShadow>
-        <boxGeometry args={[frame, postH, frame]} />
-        <meshStandardMaterial color={metal} metalness={0.62} roughness={0.3} />
-      </mesh>
-      <mesh position={[width / 2 - frame / 2, baseH + postH / 2, -depth * 0.34]} castShadow>
-        <boxGeometry args={[frame, postH, frame]} />
-        <meshStandardMaterial color={metal} metalness={0.62} roughness={0.3} />
-      </mesh>
-      <mesh position={[0, gantryY, -depth * 0.34]} castShadow>
-        <boxGeometry args={[width * 0.9, frame, frame]} />
-        <meshStandardMaterial color={metal} metalness={0.62} roughness={0.3} />
-      </mesh>
-      <mesh position={[0, gantryY - frame * 1.7, -depth * 0.22]} castShadow>
-        <boxGeometry args={[width * 0.12, frame * 2.1, depth * 0.22]} />
-        <meshStandardMaterial color="#d8e1e8" metalness={0.28} roughness={0.38} />
-      </mesh>
-      <mesh position={[width * 0.28, baseH * 0.52, depth / 2 + 0.001]} castShadow>
-        <boxGeometry args={[width * 0.12, baseH * 0.48, 0.008]} />
-        <meshStandardMaterial color="#17212b" roughness={0.45} />
-      </mesh>
-    </group>
-  );
+function Plate({ widthMm, depthMm }: { widthMm: number; depthMm: number }) {
+  const w = widthMm / 1000, d = depthMm / 1000;
+  return <group>
+    <mesh position={[0, 0.002, 0]} castShadow receiveShadow><boxGeometry args={[w, 0.004, d]} /><meshStandardMaterial color="#526575" metalness={0.4} roughness={0.5} /></mesh>
+    <mesh position={[0, 0.0045, 0]}><boxGeometry args={[w * 0.985, 0.001, d * 0.985]} /><meshStandardMaterial color="#253b4b" roughness={0.7} /></mesh>
+    <gridHelper args={[Math.max(w, d), Math.max(2, Math.round(Math.max(w, d) * 20)), "#7e9aaf", "#3e5668"]} position={[0, 0.0052, 0]} />
+  </group>;
 }
 
-function ReferenceObject({ kind }: { kind: ReferenceKind }) {
-  const item = REFERENCES[kind];
-  const wood = "#9a7654";
-  const dark = "#35424e";
-  const leg = (x: number, z: number, y: number, h: number, size = 0.035) => (
-    <mesh key={`${x}-${z}-${y}`} position={[x, y - h / 2, z]} castShadow>
-      <boxGeometry args={[size, h, size]} />
-      <meshStandardMaterial color={dark} roughness={0.5} />
-    </mesh>
-  );
-
-  if (kind === "person") {
-    const torsoH = item.height * 0.34;
-    const headR = item.width * 0.16;
-    return (
-      <group position={[0, 0, 0]}>
-        <mesh position={[0, item.height - headR, 0]} castShadow>
-          <sphereGeometry args={[headR, 24, 18]} />
-          <meshStandardMaterial color="#c99b79" roughness={0.8} />
-        </mesh>
-        <mesh position={[0, item.height * 0.59, 0]} castShadow>
-          <capsuleGeometry args={[item.width * 0.19, torsoH * 0.75, 5, 12]} />
-          <meshStandardMaterial color="#4f7895" roughness={0.75} />
-        </mesh>
-        {[-1, 1].map((side) => (
-          <group key={side}>
-            <mesh position={[side * item.width * 0.14, item.height * 0.29, 0]} castShadow>
-              <capsuleGeometry args={[item.width * 0.075, item.height * 0.3, 4, 10]} />
-              <meshStandardMaterial color="#293744" roughness={0.8} />
-            </mesh>
-            <mesh position={[side * item.width * 0.31, item.height * 0.59, 0]} rotation={[0, 0, -side * 0.12]} castShadow>
-              <capsuleGeometry args={[item.width * 0.055, item.height * 0.22, 4, 10]} />
-              <meshStandardMaterial color="#c99b79" roughness={0.8} />
-            </mesh>
-          </group>
-        ))}
-      </group>
-    );
-  }
-
-  if (kind === "door") {
-    return (
-      <group>
-        <mesh position={[0, item.height / 2, 0]} castShadow receiveShadow>
-          <boxGeometry args={[item.width, item.height, item.depth]} />
-          <meshStandardMaterial color="#b7a38b" roughness={0.75} />
-        </mesh>
-        <mesh position={[item.width * 0.34, item.height * 0.48, item.depth / 2 + 0.006]}>
-          <sphereGeometry args={[0.018, 12, 10]} />
-          <meshStandardMaterial color="#4e5b65" metalness={0.65} roughness={0.3} />
-        </mesh>
-      </group>
-    );
-  }
-
-  if (kind === "desk") {
-    const topH = 0.055;
-    const legH = Math.max(0.1, item.height - topH);
-    return (
-      <group>
-        <mesh position={[0, item.height - topH / 2, 0]} castShadow receiveShadow>
-          <boxGeometry args={[item.width, topH, item.depth]} />
-          <meshStandardMaterial color={wood} roughness={0.7} />
-        </mesh>
-        {[-1, 1].flatMap((x) =>
-          [-1, 1].map((z) =>
-            leg(x * (item.width / 2 - 0.06), z * (item.depth / 2 - 0.06), item.height - topH, legH, 0.045)
-          )
-        )}
-      </group>
-    );
-  }
-
-  const seatY = item.height * 0.48;
-  const seatH = 0.055;
-  const backH = item.height * 0.48;
-  return (
-    <group>
-      <mesh position={[0, seatY, 0]} castShadow receiveShadow>
-        <boxGeometry args={[item.width, seatH, item.depth]} />
-        <meshStandardMaterial color="#536a7c" roughness={0.8} />
-      </mesh>
-      <mesh position={[0, seatY + backH / 2, -item.depth * 0.42]} castShadow>
-        <boxGeometry args={[item.width, backH, 0.055]} />
-        <meshStandardMaterial color="#536a7c" roughness={0.8} />
-      </mesh>
-      {[-1, 1].flatMap((x) =>
-        [-1, 1].map((z) => leg(x * item.width * 0.39, z * item.depth * 0.39, seatY - seatH / 2, seatY - seatH / 2, 0.03))
-      )}
-    </group>
-  );
+function SimpleObject({ spec }: { spec: ObjectSpec }) {
+  const w = spec.widthMm / 1000, h = spec.heightMm / 1000, d = spec.depthMm / 1000;
+  if (spec.id === "basketball") return <mesh position={[0,h/2,0]} castShadow><sphereGeometry args={[Math.min(w,h,d)/2,32,24]} /><meshStandardMaterial color="#b96e37" roughness={0.8} /></mesh>;
+  if (spec.id === "mug") return <group>
+    <mesh position={[0,h/2,0]}><cylinderGeometry args={[w*.46,w*.42,h,32,1,true]} /><meshStandardMaterial color="#9cb9c9" roughness={0.3} side={THREE.DoubleSide} /></mesh>
+    <mesh position={[0,h*.12,0]}><cylinderGeometry args={[w*.42,w*.42,h*.05,32]} /><meshStandardMaterial color="#9cb9c9" /></mesh>
+    <mesh position={[w*.49,h*.53,0]}><torusGeometry args={[h*.19,w*.055,12,24]} /><meshStandardMaterial color="#9cb9c9" /></mesh>
+  </group>;
+  if (spec.id === "sneaker") return <group><mesh position={[0,h*.28,0]} castShadow><boxGeometry args={[w,h*.42,d*.94]} /><meshStandardMaterial color="#d5d9dd" /></mesh><mesh position={[0,h*.12,0]}><boxGeometry args={[w*1.02,h*.15,d]} /><meshStandardMaterial color="#8996a2" /></mesh></group>;
+  if (spec.id === "laptop") return <group><mesh position={[0,h*.18,0]}><boxGeometry args={[w,h*.18,d]} /><meshStandardMaterial color="#8494a1" metalness={0.6} /></mesh><mesh position={[0,h*.58,-d*.42]} rotation={[-.12,0,0]}><boxGeometry args={[w*.98,h*.82,d*.08]} /><meshStandardMaterial color="#334756" /></mesh></group>;
+  return <mesh position={[0,h/2,0]} castShadow><boxGeometry args={[w,h,d]} /><meshStandardMaterial color="#b18f70" roughness={0.7} /></mesh>;
 }
 
-function Scene({
-  widthMm,
-  heightMm,
-  depthMm,
-  reference
-}: {
-  widthMm: number;
-  heightMm: number;
-  depthMm: number;
-  reference: ReferenceKind;
-}) {
-  const printerW = widthMm / 1000;
-  const printerH = heightMm / 1000;
-  const printerD = depthMm / 1000;
-  const ref = REFERENCES[reference];
-  const gap = 0.32;
-  const totalWidth = printerW + ref.width + gap;
-  const printerX = -totalWidth / 2 + printerW / 2;
-  const referenceX = totalWidth / 2 - ref.width / 2;
-  const floorWidth = Math.max(2.8, totalWidth + 1.2);
-  const floorDepth = Math.max(2.2, Math.max(printerD, ref.depth) + 1.5);
-
-  return (
-    <>
-      <color attach="background" args={["#10161d"]} />
-      <fog attach="fog" args={["#10161d", 5, 11]} />
-      <ambientLight intensity={1.35} />
-      <directionalLight position={[3.5, 5, 4]} intensity={2.3} castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
-      <directionalLight position={[-3, 2, -3]} intensity={0.65} color="#8fb7d8" />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.012, 0]} receiveShadow>
-        <planeGeometry args={[floorWidth, floorDepth]} />
-        <meshStandardMaterial color="#202a34" roughness={0.88} />
-      </mesh>
-      <gridHelper args={[floorWidth, Math.round(floorWidth * 10), "#465360", "#2d3945"]} position={[0, 0.002, 0]} />
-      <group position={[printerX, 0, 0]}>
-        <PrinterModel width={printerW} height={printerH} depth={printerD} />
-      </group>
-      <group position={[referenceX, 0, 0]}>
-        <ReferenceObject kind={reference} />
-      </group>
-      <ContactShadows position={[0, 0.004, 0]} opacity={0.42} scale={Math.max(3, totalWidth + 1)} blur={2.4} far={3} />
-      <OrbitControls
-        makeDefault
-        target={[0, Math.max(printerH, ref.height) * 0.48, 0]}
-        minDistance={1.5}
-        maxDistance={8}
-        enableDamping
-        dampingFactor={0.08}
-        maxPolarAngle={Math.PI * 0.49}
-      />
-    </>
-  );
+function GeneratedObject({ url, spec }: { url: string; spec: ObjectSpec }) {
+  const { scene } = useGLTF(url);
+  const object = useMemo(() => scene.clone(true), [scene]);
+  const dimensions = [spec.widthMm / 1000, spec.heightMm / 1000, spec.depthMm / 1000];
+  const { scale, minY } = useMemo(() => {
+    object.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(object);
+    const size = box.getSize(new THREE.Vector3());
+    return {
+      scale: [size.x ? dimensions[0] / size.x : 1, size.y ? dimensions[1] / size.y : 1, size.z ? dimensions[2] / size.z : 1] as [number,number,number],
+      minY: box.min.y
+    };
+  }, [object, spec.widthMm, spec.heightMm, spec.depthMm]);
+  return <primitive object={object} scale={scale} position={[0, -minY * scale[1] + 0.006, 0]} />;
 }
 
-function formatMm(value: number) {
-  return value.toLocaleString("en-US", { maximumFractionDigits: 1 });
+function Scene({ widthMm, depthMm, spec, modelUrl }: { widthMm: number; depthMm: number; spec: ObjectSpec; modelUrl: string | null }) {
+  const plateW = widthMm / 1000, plateD = depthMm / 1000;
+  const objectW = spec.widthMm / 1000, objectD = spec.depthMm / 1000;
+  const gap = Math.max(0.08, Math.max(plateW, objectW) * .28);
+  const totalW = plateW + objectW + gap;
+  const plateX = -totalW / 2 + plateW / 2, objectX = totalW / 2 - objectW / 2;
+  const floorW = Math.max(1.4, totalW + .55), floorD = Math.max(1.1, Math.max(plateD, objectD) + .6);
+  return <>
+    <color attach="background" args={["#10161d"]} />
+    <ambientLight intensity={1.35} />
+    <directionalLight position={[2,3.5,3]} intensity={2.2} castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
+    <directionalLight position={[-2,2,-2]} intensity={.6} color="#8fb7d8" />
+    <mesh rotation={[-Math.PI/2,0,0]} position={[0,-.002,0]} receiveShadow><planeGeometry args={[floorW,floorD]} /><meshStandardMaterial color="#202a34" roughness={.9} /></mesh>
+    <gridHelper args={[floorW,Math.max(10,Math.round(floorW*10)),"#465360","#2d3945"]} position={[0,.001,0]} />
+    <group position={[plateX,0,0]}><Plate widthMm={widthMm} depthMm={depthMm} /></group>
+    <group position={[objectX,0,0]}>{modelUrl ? <Suspense fallback={<SimpleObject spec={spec} />}><GeneratedObject url={modelUrl} spec={spec} /></Suspense> : <SimpleObject spec={spec} />}</group>
+    <ContactShadows position={[0,.003,0]} opacity={.4} scale={Math.max(2,totalW+.5)} blur={2} far={2.5} />
+    <OrbitControls makeDefault target={[0,Math.max(spec.heightMm/1000,.2)*.46,0]} minDistance={.35} maxDistance={7} enableDamping dampingFactor={.08} maxPolarAngle={Math.PI*.49} />
+  </>;
 }
+
+const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 1 });
 
 export default function Home() {
-  const [widthMm, setWidthMm] = useState(347);
-  const [heightMm, setHeightMm] = useState(365);
-  const [depthMm, setDepthMm] = useState(315);
-  const [reference, setReference] = useState<ReferenceKind>("person");
-  const ref = REFERENCES[reference];
-  const footprint = useMemo(() => ((widthMm * depthMm) / 1_000_000).toFixed(3), [widthMm, depthMm]);
+  const [widthMm,setWidthMm] = useState(180), [depthMm,setDepthMm] = useState(180);
+  const [printerName,setPrinterName] = useState("");
+  const [spec,setSpec] = useState<ObjectSpec>({id:"mug",name:"Coffee mug",widthMm:95,heightMm:100,depthMm:95,note:"Approximate everyday dimensions; individual mugs vary.",prompt:"a simple ceramic coffee mug"});
+  const [modelUrl,setModelUrl] = useState<string|null>(null);
+  const [searchResults,setSearchResults] = useState<SearchResult[]>([]);
+  const [sourceStatus,setSourceStatus] = useState(""), [generateStatus,setGenerateStatus] = useState("");
+  const [busySearch,setBusySearch] = useState(false), [busyGenerate,setBusyGenerate] = useState(false);
+  const [error,setError] = useState(""), [taskId,setTaskId] = useState<string|null>(null);
 
-  const setDimension = (
-    setter: (value: number) => void,
-    value: string
-  ) => {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed) && parsed >= 50 && parsed <= 2500) setter(parsed);
+  useEffect(() => {
+    if (!taskId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/tripo?taskId=${encodeURIComponent(taskId)}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Could not check Tripo task.");
+        if (cancelled) return;
+        setGenerateStatus(`Tripo is working: ${data.progress ?? 0}%`);
+        if (data.status === "success") {
+          const file = await fetch(`/api/tripo?taskId=${encodeURIComponent(taskId)}&download=1`);
+          if (!file.ok) { const problem = await file.json().catch(() => ({})); throw new Error(problem.error || "Model download failed."); }
+          const url = URL.createObjectURL(await file.blob());
+          setModelUrl(old => { if (old) URL.revokeObjectURL(old); return url; });
+          setGenerateStatus("Model ready. The displayed object's outer dimensions are fitted to the listed measurements.");
+          setTaskId(null); setBusyGenerate(false); return;
+        }
+        if (["failed","cancelled","banned"].includes(data.status)) throw new Error(data.error || "Tripo could not generate this object.");
+        timer = setTimeout(poll,3500);
+      } catch (err) {
+        if (!cancelled) { setError(err instanceof Error ? err.message : "Tripo request failed."); setBusyGenerate(false); setTaskId(null); }
+      }
+    };
+    void poll();
+    return () => { cancelled = true; clearTimeout(timer); };
+  },[taskId]);
+
+  const searchSpecs = async () => {
+    if (!printerName.trim()) { setError("Enter the printer name or model first."); return; }
+    setBusySearch(true); setError(""); setSearchResults([]); setSourceStatus("Searching Hyperbrowser for build-area specifications…");
+    try {
+      const res = await fetch("/api/spec-search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({printerName:printerName.trim()})});
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Specification search failed.");
+      setSearchResults(data.results || []);
+      setSourceStatus(data.results?.length ? "Check the manufacturer's source before entering dimensions." : "No results. Try the exact printer model name.");
+    } catch(err) { setError(err instanceof Error ? err.message : "Specification search failed."); setSourceStatus(""); }
+    finally { setBusySearch(false); }
   };
 
-  return (
-    <main className="app-shell">
-      <header className="topbar">
-        <Link className="brand" href="/" aria-label="Ori Dimension home">
-          <span className="brand-mark">O<span>↗</span></span>
-          <span>ORI <b>DIMENSION</b></span>
-        </Link>
-        <span className="topbar-note"><span className="status-dot" /> REAL-WORLD SCALE VIEWER</span>
-      </header>
+  const generate = async () => {
+    setBusyGenerate(true); setError(""); setGenerateStatus("Ori is choosing an object from its comparison list…"); setModelUrl(null);
+    try {
+      const res = await fetch("/api/tripo",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({plateWidthMm:widthMm,plateDepthMm:depthMm})});
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not start Tripo generation.");
+      setSpec(data.object); setTaskId(data.taskId);
+      setGenerateStatus(`Ori picked ${data.object.name}; asking Tripo for a ${data.object.widthMm} × ${data.object.heightMm} × ${data.object.depthMm} mm model…`);
+    } catch(err) { setError(err instanceof Error ? err.message : "Tripo generation failed."); setBusyGenerate(false); }
+  };
+  const updateMm = (value: string,setter:(n:number)=>void) => { const n=Number(value); if(Number.isFinite(n)&&n>=50&&n<=1000) setter(n); };
+  const area = useMemo(()=>((widthMm*depthMm)/1_000_000).toFixed(4),[widthMm,depthMm]);
 
-      <section className="intro">
-        <div className="eyebrow">SIZE, MADE VISIBLE</div>
-        <h1>How big is it, <span>really?</span></h1>
-        <p>Put a 3D printer beside something familiar. Everything in the scene shares the same scale.</p>
-      </section>
-
-      <section className="workspace" aria-label="Printer size comparison">
-        <div className="scene-panel">
-          <div className="scene-head">
-            <div>
-              <span className="section-kicker">LIVE 3D SCENE</span>
-              <h2>Printer <span className="muted">vs.</span> {ref.name.toLowerCase()}</h2>
-            </div>
-            <span className="unit-chip">1 scene unit = 1 metre</span>
-          </div>
-          <div className="scene-view">
-            <Canvas
-              shadows
-              dpr={[1, 1.75]}
-              camera={{ position: [2.8, 2.05, 3.6], fov: 37, near: 0.05, far: 100 }}
-              gl={{ antialias: true, powerPreference: "high-performance" }}
-            >
-              <Suspense fallback={null}>
-                <Scene
-                  widthMm={widthMm}
-                  heightMm={heightMm}
-                  depthMm={depthMm}
-                  reference={reference}
-                />
-              </Suspense>
-            </Canvas>
-            <div className="scene-hint"><span>↻</span> Drag to rotate <i /> Scroll to zoom</div>
-            <div className="scale-legend"><span className="legend-printer" /> PRINTER <span className="legend-reference" /> SCALE OBJECT</div>
-          </div>
-          <div className="scene-footer">
-            <span>SCHEMATIC PRINTER MODEL</span>
-            <span>Dimensions control its outer size</span>
-          </div>
+  return <main className="app-shell">
+    <header className="topbar"><Link className="brand" href="/" aria-label="Ori Dimension home"><span className="brand-mark">O<span>↗</span></span><span>ORI <b>DIMENSION</b></span></Link><span className="topbar-note"><span className="status-dot" /> REAL-WORLD SCALE VIEWER</span></header>
+    <section className="intro"><div className="eyebrow">SIZE, MADE VISIBLE</div><h1>How big is the build plate, <span>really?</span></h1><p>Ori puts a measured 3D build plate beside a familiar object. Both share one real-world scale.</p></section>
+    <section className="workspace" aria-label="Build plate size comparison">
+      <div className="scene-panel">
+        <div className="scene-head"><div><span className="section-kicker">LIVE 3D SCENE</span><h2>Build plate <span className="muted">vs.</span> {spec.name.toLowerCase()}</h2></div><span className="unit-chip">1 scene unit = 1 metre</span></div>
+        <div className="scene-view"><Canvas shadows dpr={[1,1.75]} camera={{position:[.72,.65,.9],fov:37,near:.01,far:100}} gl={{antialias:true,powerPreference:"high-performance"}}><Scene widthMm={widthMm} depthMm={depthMm} spec={spec} modelUrl={modelUrl} /></Canvas><div className="scene-hint"><span>↻</span> Drag to rotate <i /> Scroll to zoom</div><div className="scale-legend"><span className="legend-printer" /> BUILD PLATE <span className="legend-reference" /> REAL-WORLD OBJECT</div></div>
+        <div className="scene-footer"><span>BUILD PLATE DIMENSIONS</span><span>Object: {spec.widthMm} × {spec.heightMm} × {spec.depthMm} mm</span></div>
+      </div>
+      <aside className="controls-panel">
+        <div className="control-block"><div className="section-kicker">01 / BUILD PLATE</div><h2>Enter verified dimensions</h2><p className="control-copy">Example dimensions until verified for your exact printer.</p>
+          <div className="dimension-grid two-fields"><label className="dimension-field"><span>Width <small>mm</small></span><input aria-label="Build plate width in millimetres" type="number" min="50" max="1000" value={widthMm} onChange={e=>updateMm(e.target.value,setWidthMm)} /></label><label className="dimension-field"><span>Depth <small>mm</small></span><input aria-label="Build plate depth in millimetres" type="number" min="50" max="1000" value={depthMm} onChange={e=>updateMm(e.target.value,setDepthMm)} /></label></div>
+          <button className="reset-button" onClick={()=>{setWidthMm(180);setDepthMm(180);}}>Reset example (180 × 180 mm)</button>
+          <div className="control-divider" />
+          <label className="search-label" htmlFor="printer-model">Find your printer's build plate</label><div className="search-row"><input id="printer-model" value={printerName} onChange={e=>setPrinterName(e.target.value)} placeholder="e.g. Bambu Lab A1 mini" /><button onClick={searchSpecs} disabled={busySearch}>{busySearch?"Searching…":"Search"}</button></div>
+          <p className="fine-print">Hyperbrowser searches for specifications. Verify the manufacturer source before using measurements.</p>{sourceStatus&&<p className="inline-status">{sourceStatus}</p>}
+          {searchResults.map(r=><a className="source-result" key={r.url} href={r.url} target="_blank" rel="noreferrer"><b>{r.title}</b><span>{r.description}</span><small>Open source ↗</small></a>)}
         </div>
-
-        <aside className="controls-panel">
-          <div className="control-block">
-            <div className="section-kicker">01 / PRINTER SIZE</div>
-            <h2>Set the dimensions</h2>
-            <p className="control-copy">Enter the printer’s external measurements. The 3D model updates proportionally.</p>
-            <div className="dimension-grid">
-              <label className="dimension-field">
-                <span>Width <small>mm</small></span>
-                <input type="number" min="50" max="2500" step="1" value={widthMm} onChange={(event) => setDimension(setWidthMm, event.target.value)} />
-              </label>
-              <label className="dimension-field">
-                <span>Height <small>mm</small></span>
-                <input type="number" min="50" max="2500" step="1" value={heightMm} onChange={(event) => setDimension(setHeightMm, event.target.value)} />
-              </label>
-              <label className="dimension-field">
-                <span>Depth <small>mm</small></span>
-                <input type="number" min="50" max="2500" step="1" value={depthMm} onChange={(event) => setDimension(setDepthMm, event.target.value)} />
-              </label>
-            </div>
-            <button className="reset-button" onClick={() => { setWidthMm(347); setHeightMm(365); setDepthMm(315); }}>
-              Reset example dimensions
-            </button>
-            <p className="fine-print">Example dimensions only. Replace with your printer’s verified external measurements.</p>
-          </div>
-
-          <div className="control-divider" />
-
-          <div className="control-block">
-            <div className="section-kicker">02 / SCALE OBJECT</div>
-            <h2>Compare it with…</h2>
-            <div className="reference-options" role="group" aria-label="Choose a scale object">
-              {(Object.keys(REFERENCES) as ReferenceKind[]).map((key) => (
-                <button
-                  key={key}
-                  className={reference === key ? "reference-option selected" : "reference-option"}
-                  aria-pressed={reference === key}
-                  onClick={() => setReference(key)}
-                >
-                  <span className={`reference-icon ${key}`} aria-hidden="true">
-                    {key === "person" ? "↟" : key === "desk" ? "▱" : key === "chair" ? "⌑" : "▯"}
-                  </span>
-                  <span>{REFERENCES[key].name}</span>
-                  <span className="option-check">{reference === key ? "✓" : ""}</span>
-                </button>
-              ))}
-            </div>
-            <div className="reference-note">
-              <span className="note-mark">i</span>
-              <div><b>{ref.name} dimensions</b><p>{ref.note}. This is a reference estimate, not a universal standard.</p></div>
-            </div>
-          </div>
-
-          <div className="control-divider" />
-
-          <div className="control-block summary-block">
-            <div className="section-kicker">03 / QUICK READ</div>
-            <div className="summary-row"><span>Printer height</span><b>{formatMm(heightMm)} mm <small>({(heightMm / 1000).toFixed(2)} m)</small></b></div>
-            <div className="summary-row"><span>Floor footprint</span><b>{footprint} m²</b></div>
-            <div className="summary-row"><span>Reference height</span><b>{ref.height.toFixed(2)} m</b></div>
-            <p className="fine-print">The scene is a proportional comparison, not a photorealistic model. Reference-object measurements are approximate.</p>
-          </div>
-        </aside>
-      </section>
-
-      <footer className="page-footer">
-        <span>ORI DIMENSION <i>·</i> BUILT FOR REAL-WORLD SCALE</span>
-        <span>All scene objects use the same unit system.</span>
-      </footer>
-    </main>
-  );
+        <div className="control-divider" />
+        <div className="control-block"><div className="section-kicker">02 / ORI + TRIPO</div><h2>Generate a comparison</h2><p className="control-copy">Ori chooses a suitable everyday object, then asks Tripo to generate it with real-world measurements in the prompt.</p>
+          <div className="selected-object"><div className="object-icon">◇</div><div><b>{spec.name}</b><span>{spec.widthMm} W × {spec.heightMm} H × {spec.depthMm} D mm</span></div></div>
+          <button className="primary-button" onClick={generate} disabled={busyGenerate}>{busyGenerate?"Generating model…":"Generate with Tripo"}</button>{generateStatus&&<p className="inline-status">{generateStatus}</p>}
+          <p className="fine-print">Generation may use API credits. Listed measurements control the displayed object's outer dimensions.</p>
+        </div>
+        <div className="control-divider" />
+        <div className="control-block summary-block"><div className="section-kicker">03 / QUICK READ</div><div className="summary-row"><span>Plate width</span><b>{fmt(widthMm)} mm</b></div><div className="summary-row"><span>Plate depth</span><b>{fmt(depthMm)} mm</b></div><div className="summary-row"><span>Plate area</span><b>{area} m²</b></div><div className="summary-row"><span>Object height</span><b>{fmt(spec.heightMm)} mm</b></div><p className="fine-print">The build plate and comparison object share one scale. The 180 × 180 mm starting size is an example, not a printer-specific claim.</p></div>
+        {error&&<div className="error-message" role="alert">{error}</div>}
+      </aside>
+    </section>
+    <footer className="page-footer"><span>ORI DIMENSION <i>·</i> BUILT FOR REAL-WORLD SCALE</span><span>Dimensions, not AI guesses, define the scale.</span></footer>
+  </main>;
 }
