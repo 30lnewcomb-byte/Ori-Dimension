@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useMemo, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { ContactShadows, OrbitControls } from "@react-three/drei";
@@ -263,7 +264,7 @@ export default function Home() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <a className="brand" href="/" aria-label="Ori Dimension home">
+        <Link className="brand" href="/" aria-label="Ori Dimension home">
           <span className="brand-mark">O<span>↗</span></span>
           <span>ORI <b>DIMENSION</b></span>
         </a>
