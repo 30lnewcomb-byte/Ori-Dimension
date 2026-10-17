@@ -75,6 +75,7 @@ export default function Home() {
   const [spec,setSpec] = useState<ObjectSpec>({id:"mug",name:"Coffee mug",widthMm:95,heightMm:100,depthMm:95,note:"Approximate everyday dimensions; individual mugs vary.",prompt:"a simple ceramic coffee mug"});
   const [modelUrl,setModelUrl] = useState<string|null>(null);
   const [searchResults,setSearchResults] = useState<SearchResult[]>([]);
+  const [plateCandidate,setPlateCandidate] = useState<{widthMm:number;depthMm:number;sourceTitle:string;sourceUrl:string}|null>(null);
   const [sourceStatus,setSourceStatus] = useState(""), [generateStatus,setGenerateStatus] = useState("");
   const [busySearch,setBusySearch] = useState(false), [busyGenerate,setBusyGenerate] = useState(false);
   const [error,setError] = useState(""), [taskId,setTaskId] = useState<string|null>(null);
@@ -110,13 +111,14 @@ export default function Home() {
 
   const searchSpecs = async () => {
     if (!printerName.trim()) { setError("Enter the printer name or model first."); return; }
-    setBusySearch(true); setError(""); setSearchResults([]); setSourceStatus("Searching Hyperbrowser for build-area specifications…");
+    setBusySearch(true); setError(""); setSearchResults([]); setPlateCandidate(null); setSourceStatus("Searching Hyperbrowser for build-area specifications…");
     try {
       const res = await fetch("/api/spec-search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({printerName:printerName.trim()})});
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Specification search failed.");
       setSearchResults(data.results || []);
-      setSourceStatus(data.results?.length ? "Check the manufacturer's source before entering dimensions." : "No results. Try the exact printer model name.");
+      setPlateCandidate(data.plateCandidate || null);
+      setSourceStatus(data.plateCandidate ? "Ori found a candidate measurement. Check its source before applying it." : (data.results?.length ? "Found sources, but no high-confidence build-area measurement. Check the manufacturer page." : "No results. Try the exact printer model name."));
     } catch(err) { setError(err instanceof Error ? err.message : "Specification search failed."); setSourceStatus(""); }
     finally { setBusySearch(false); }
   };
@@ -150,6 +152,7 @@ export default function Home() {
           <div className="control-divider" />
           <label className="search-label" htmlFor="printer-model">Find your printer&apos;s build plate</label><div className="search-row"><input id="printer-model" value={printerName} onChange={e=>setPrinterName(e.target.value)} placeholder="e.g. Bambu Lab A1 mini" /><button onClick={searchSpecs} disabled={busySearch}>{busySearch?"Searching…":"Search"}</button></div>
           <p className="fine-print">Hyperbrowser searches for specifications. Verify the manufacturer source before using measurements.</p>{sourceStatus&&<p className="inline-status">{sourceStatus}</p>}
+          {plateCandidate && <div className="plate-candidate"><b>Candidate build area</b><span>{plateCandidate.widthMm} × {plateCandidate.depthMm} mm</span><a href={plateCandidate.sourceUrl} target="_blank" rel="noreferrer">{plateCandidate.sourceTitle} ↗</a><button className="reset-button" onClick={() => { setWidthMm(plateCandidate.widthMm); setDepthMm(plateCandidate.depthMm); setSourceStatus("Applied candidate dimensions. Verify the source and printer variant."); }}>Apply these dimensions</button></div>}
           {searchResults.map(r=><a className="source-result" key={r.url} href={r.url} target="_blank" rel="noreferrer"><b>{r.title}</b><span>{r.description}</span><small>Open source ↗</small></a>)}
         </div>
         <div className="control-divider" />
