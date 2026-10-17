@@ -63,3 +63,19 @@ Vercel builds commits from the connected repository. GitHub Actions also runs Ty
 ## Geometry experiments
 
 The repository also contains earlier Python triangle-dataset and TensorFlow experiments. They are separate experiments and are **not used by the Next.js visualizer**. Exact dimensional geometry in the viewer should use deterministic calculations, not neural-network guesses.
+
+
+## Build plate + generated comparisons
+
+The viewer focuses on the **build plate**, not a full printer model. Width and depth are expressed in millimetres and the plate is rendered in metre-based scene units. The default 180 × 180 mm size is an example until verified for a specific printer.
+
+### Optional server-side integrations
+
+Configure these variables in Vercel Project Settings → Environment Variables:
+
+- `TRIPO_API_KEY` — enables on-demand Tripo text-to-3D generation. The key is used only by server routes and is never sent to browser code.
+- `HYPERBROWSER_API_KEY` — enables web search for printer build-area specifications. Results link to sources; verify manufacturer measurements before entering them.
+
+The Tripo endpoint chooses a comparison item from a curated list based on its size relative to the plate, includes dimensions in the generation prompt, and fits the resulting GLB bounding box to the selected object's catalogue dimensions in the viewer. Generated appearance is not treated as a measurement source. Generation may consume Tripo credits.
+
+Without API keys, the viewer remains usable with a simple procedural comparison preview; the external generation and search actions explain which server key is missing.
