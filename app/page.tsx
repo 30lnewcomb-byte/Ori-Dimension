@@ -267,7 +267,7 @@ export default function Home() {
         <Link className="brand" href="/" aria-label="Ori Dimension home">
           <span className="brand-mark">O<span>↗</span></span>
           <span>ORI <b>DIMENSION</b></span>
-        </a>
+        </Link>
         <span className="topbar-note"><span className="status-dot" /> REAL-WORLD SCALE VIEWER</span>
       </header>
 
