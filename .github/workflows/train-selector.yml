@@ -1,0 +1,59 @@
+name: Train Ori scale selector
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "data/comparison-objects.json"
+      - "src/selection/**"
+      - "app/api/tripo/route.ts"
+      - "package.json"
+      - ".github/workflows/train-selector.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install TensorFlow training dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+      - name: Train and evaluate selector
+        run: python -m src.selection.train_model --examples 30000 --epochs 80 --seed 42
+      - name: Validate generated weights
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          weights = json.loads(Path("data/selector-weights.json").read_text())
+          assert weights["trained"] is True
+          assert weights["inputSize"] == 6
+          assert len(weights["layers"]) == 3
+          assert weights["metrics"]["catalogue_objects"] >= 70
+          assert weights["metrics"]["validation_mae"] < 0.15
+          print(json.dumps(weights["metrics"], indent=2))
+          PY
+      - name: Commit trained weights
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/selector-weights.json
+          if git diff --cached --quiet; then
+            echo "Trained weights unchanged; nothing to commit."
+          else
+            git commit -m "Train Ori scale selector [skip ci]"
+            git push
+          fi
