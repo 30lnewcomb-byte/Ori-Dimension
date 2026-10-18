@@ -15,7 +15,8 @@
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "three": "^0.179.1",
-    "@hyperbrowser/sdk": "^1.2.0"
+    "@hyperbrowser/sdk": "^1.2.0",
+    "@tensorflow/tfjs": "^4.22.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",
