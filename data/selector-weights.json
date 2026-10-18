@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "trained": false,
+  "inputSize": 6,
+  "layers": [],
+  "metrics": null,
+  "note": "Placeholder only. GitHub Actions trains this file from the shared object catalogue."
+}
