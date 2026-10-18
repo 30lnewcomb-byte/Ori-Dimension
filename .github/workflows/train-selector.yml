@@ -23,6 +23,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: true
+      - name: Sync with latest main before training
+        run: git pull --rebase origin main
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
