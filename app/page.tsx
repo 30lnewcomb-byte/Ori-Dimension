@@ -75,7 +75,7 @@ function Scene({ widthMm, depthMm, spec, modelUrl }: { widthMm: number; depthMm:
 function SceneCamera({ span, height, objectId }: { span: number; height: number; objectId: string }) {
   const { camera } = useThree();
   useEffect(() => {
-    camera.position.set(span * 1.15, Math.max(height * .65, span * .72), span * 1.55);
+    camera.position.set(span * 1.6, Math.max(height * .8, span * 1.3), span * 2.2);
     camera.near = Math.max(.001, span / 10000);
     camera.far = Math.max(100, span * 20);
     camera.lookAt(0, Math.max(height, .2) * .4, 0);
@@ -211,7 +211,7 @@ export default function Home() {
           {searchResults.map(r=><a className="source-result" key={r.url} href={r.url} target="_blank" rel="noreferrer"><b>{r.title}</b><span>{r.description}</span><small>Open source ↗</small></a>)}
         </div>
         <div className="control-divider" />
-        <div className="control-block"><div className="section-kicker">02 / ORI + TRIPO</div><h2>Generate a comparison</h2><p className="control-copy">Ori chooses a suitable everyday object, then asks Tripo to generate it with real-world measurements in the prompt.</p>
+        <div className="control-block"><div className="section-kicker">02 / ORI + TRIPO</div><h2>Generate a comparison</h2><p className="control-copy">Ori selects from 73 scale references, from tiny tabletop objects to billboards, buildings, aircraft, and ships. Its TensorFlow selector scores the size match; a reusable prompt template supplies Tripo with the object details and dimensions.</p>
           <div className="selected-object"><div className="object-icon">◇</div><div><b>{spec.name}</b><span>{spec.widthMm} W × {spec.heightMm} H × {spec.depthMm} D mm</span></div></div>
           <button className="primary-button" onClick={generate} disabled={busyGenerate}>{busyGenerate?"Generating model…":"Generate with Tripo"}</button>{generateStatus&&<p className="inline-status">{generateStatus}</p>}
           <p className="fine-print">Generation may use API credits. Listed measurements control the displayed object&apos;s outer dimensions.</p>
