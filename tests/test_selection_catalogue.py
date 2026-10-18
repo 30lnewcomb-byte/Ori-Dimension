@@ -15,11 +15,13 @@ class ComparisonCatalogueTests(unittest.TestCase):
         cls.objects = json.loads(CATALOG.read_text(encoding="utf-8"))
 
     def test_catalogue_has_broad_scale_coverage(self) -> None:
-        self.assertGreaterEqual(len(self.objects), 70)
+        self.assertGreaterEqual(len(self.objects), 200)
         names = {item["name"].lower() for item in self.objects}
         self.assertTrue(any("billboard" in name for name in names))
         self.assertTrue(any("stadium" in name for name in names))
         self.assertTrue(any("die" in name for name in names))
+        self.assertTrue(any("filament spool" in name for name in names))
+        self.assertTrue(any("3d printed" in name.lower() or "3d printer" in name.lower() for name in names))
         self.assertGreaterEqual(max(max(x["widthMm"], x["heightMm"], x["depthMm"]) for x in self.objects), 100_000)
 
     def test_ids_are_unique_and_dimensions_are_positive(self) -> None:
