@@ -211,8 +211,8 @@ export default function Home() {
           {searchResults.map(r=><a className="source-result" key={r.url} href={r.url} target="_blank" rel="noreferrer"><b>{r.title}</b><span>{r.description}</span><small>Open source ↗</small></a>)}
         </div>
         <div className="control-divider" />
-        <div className="control-block"><div className="section-kicker">02 / ORI + TRIPO</div><h2>Generate a comparison</h2><p className="control-copy">Ori selects from 73 scale references, from tiny tabletop objects to billboards, buildings, aircraft, and ships. Its TensorFlow selector scores the size match; a reusable prompt template supplies Tripo with the object details and dimensions.</p>
-          <div className="selected-object"><div className="object-icon">◇</div><div><b>{spec.name}</b><span>{spec.widthMm} W × {spec.heightMm} H × {spec.depthMm} D mm</span></div></div>
+        <div className="control-block"><div className="section-kicker">02 / ORI + TRIPO</div><h2>Generate a comparison</h2><p className="control-copy">Ori automatically chooses a reference from its 347-object library, including everyday items, 3D-printing objects, vehicles, buildings, and large structures. You don't choose the object—Ori's TensorFlow selector does.</p>
+          <div className="selected-object"><div className="object-icon">◇</div><div><b>{taskId || modelUrl || busyGenerate ? spec.name : "Ori chooses automatically"}</b><span>{taskId || modelUrl || busyGenerate ? `${spec.widthMm} W × ${spec.heightMm} H × ${spec.depthMm} D mm` : "No reference object to choose"}</span></div></div>
           <button className="primary-button" onClick={generate} disabled={busyGenerate}>{busyGenerate?"Generating model…":"Generate with Tripo"}</button>{generateStatus&&<p className="inline-status">{generateStatus}</p>}
           <p className="fine-print">Generation may use API credits. Listed measurements control the displayed object&apos;s outer dimensions.</p>
         </div>
