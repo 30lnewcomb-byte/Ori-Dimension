@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { ContactShadows, OrbitControls, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 
@@ -49,22 +49,39 @@ function GeneratedObject({ url, spec }: { url: string; spec: ObjectSpec }) {
 function Scene({ widthMm, depthMm, spec, modelUrl }: { widthMm: number; depthMm: number; spec: ObjectSpec; modelUrl: string | null }) {
   const plateW = widthMm / 1000, plateD = depthMm / 1000;
   const objectW = spec.widthMm / 1000, objectD = spec.depthMm / 1000;
+  const objectH = spec.heightMm / 1000;
   const gap = Math.max(0.08, Math.max(plateW, objectW) * .28);
   const totalW = plateW + objectW + gap;
   const plateX = -totalW / 2 + plateW / 2, objectX = totalW / 2 - objectW / 2;
-  const floorW = Math.max(1.4, totalW + .55), floorD = Math.max(1.1, Math.max(plateD, objectD) + .6);
+  const sceneSpan = Math.max(totalW, plateD, objectD, objectH, 0.5);
+  const floorW = Math.min(1000, Math.max(1.4, totalW + sceneSpan * .25));
+  const floorD = Math.min(1000, Math.max(1.1, Math.max(plateD, objectD) + sceneSpan * .25));
+  const divisions = Math.min(200, Math.max(10, Math.round(Math.max(floorW, floorD) * 4)));
   return <>
+    <SceneCamera span={sceneSpan} height={objectH} objectId={spec.id} />
     <color attach="background" args={["#10161d"]} />
     <ambientLight intensity={1.35} />
-    <directionalLight position={[2,3.5,3]} intensity={2.2} castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
-    <directionalLight position={[-2,2,-2]} intensity={.6} color="#8fb7d8" />
+    <directionalLight position={[sceneSpan * .8,sceneSpan * 1.4,sceneSpan * 1.2]} intensity={2.2} castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
+    <directionalLight position={[-sceneSpan,-sceneSpan*.6,-sceneSpan]} intensity={.6} color="#8fb7d8" />
     <mesh rotation={[-Math.PI/2,0,0]} position={[0,-.002,0]} receiveShadow><planeGeometry args={[floorW,floorD]} /><meshStandardMaterial color="#202a34" roughness={.9} /></mesh>
-    <gridHelper args={[floorW,Math.max(10,Math.round(floorW*10)),"#465360","#2d3945"]} position={[0,.001,0]} />
+    <gridHelper args={[Math.max(floorW,floorD),divisions,"#465360","#2d3945"]} position={[0,.001,0]} />
     <group position={[plateX,0,0]}><Plate widthMm={widthMm} depthMm={depthMm} /></group>
     <group position={[objectX,0,0]}>{modelUrl ? <Suspense fallback={<SimpleObject spec={spec} />}><GeneratedObject url={modelUrl} spec={spec} /></Suspense> : <SimpleObject spec={spec} />}</group>
-    <ContactShadows position={[0,.003,0]} opacity={.4} scale={Math.max(2,totalW+.5)} blur={2} far={2.5} />
-    <OrbitControls makeDefault target={[0,Math.max(spec.heightMm/1000,.2)*.46,0]} minDistance={.35} maxDistance={7} enableDamping dampingFactor={.08} maxPolarAngle={Math.PI*.49} />
+    {sceneSpan <= 8 && <ContactShadows position={[0,.003,0]} opacity={.4} scale={Math.max(2,totalW+.5)} blur={2} far={2.5} />}
+    <OrbitControls makeDefault target={[0,Math.max(objectH,.2)*.46,0]} minDistance={Math.max(.05,sceneSpan*.035)} maxDistance={Math.max(7,sceneSpan*8)} enableDamping dampingFactor={.08} maxPolarAngle={Math.PI*.49} />
   </>;
+}
+
+function SceneCamera({ span, height, objectId }: { span: number; height: number; objectId: string }) {
+  const { camera } = useThree();
+  useEffect(() => {
+    camera.position.set(span * 1.15, Math.max(height * .65, span * .72), span * 1.55);
+    camera.near = Math.max(.001, span / 10000);
+    camera.far = Math.max(100, span * 20);
+    camera.lookAt(0, Math.max(height, .2) * .4, 0);
+    camera.updateProjectionMatrix();
+  }, [camera, span, height, objectId]);
+  return null;
 }
 
 const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 1 });
@@ -84,30 +101,68 @@ export default function Home() {
     if (!taskId) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
+    let retryCount = 0;
+    const startedAt = Date.now();
+    const maxWaitMs = 12 * 60 * 1000;
+    const maxRetries = 15;
+
+    const stopWithError = (message: string) => {
+      setError(message);
+      setBusyGenerate(false);
+      setTaskId(null);
+    };
+
     const poll = async () => {
+      if (cancelled) return;
+      if (Date.now() - startedAt > maxWaitMs) {
+        stopWithError("Tripo is taking longer than expected. The task may still be processing; press Generate with Tripo to start another attempt.");
+        return;
+      }
       try {
-        const res = await fetch(`/api/tripo?taskId=${encodeURIComponent(taskId)}`);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Could not check Tripo task.");
+        const res = await fetch(`/api/tripo?taskId=${encodeURIComponent(taskId)}`, { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Task status check returned HTTP ${res.status}.`);
         if (cancelled) return;
-        setGenerateStatus(`Tripo is working: ${data.progress ?? 0}%`);
+
+        if (["failed", "cancelled", "banned"].includes(data.status)) {
+          stopWithError(data.error || `Tripo task ended with status: ${data.status}.`);
+          return;
+        }
         if (data.status === "success") {
-          const file = await fetch(`/api/tripo?taskId=${encodeURIComponent(taskId)}&download=1`);
-          if (!file.ok) { const problem = await file.json().catch(() => ({})); throw new Error(problem.error || "Model download failed."); }
-          const url = URL.createObjectURL(await file.blob());
+          const file = await fetch(`/api/tripo?taskId=${encodeURIComponent(taskId)}&download=1`, { cache: "no-store" });
+          if (!file.ok) {
+            const problem = await file.json().catch(() => ({}));
+            throw new Error(problem.error || `Model download returned HTTP ${file.status}.`);
+          }
+          const blob = await file.blob();
+          if (cancelled) return;
+          const url = URL.createObjectURL(blob);
           setModelUrl(old => { if (old) URL.revokeObjectURL(old); return url; });
           setGenerateStatus("Model ready. The displayed object's outer dimensions are fitted to the listed measurements.");
-          setTaskId(null); setBusyGenerate(false); return;
+          setTaskId(null);
+          setBusyGenerate(false);
+          return;
         }
-        if (["failed","cancelled","banned"].includes(data.status)) throw new Error(data.error || "Tripo could not generate this object.");
-        timer = setTimeout(poll,3500);
+
+        retryCount = 0;
+        setGenerateStatus(`Tripo is working: ${data.progress ?? 0}%`);
+        timer = setTimeout(poll, 3500);
       } catch (err) {
-        if (!cancelled) { setError(err instanceof Error ? err.message : "Tripo request failed."); setBusyGenerate(false); setTaskId(null); }
+        if (cancelled) return;
+        retryCount += 1;
+        if (retryCount > maxRetries) {
+          stopWithError(`Couldn't reconnect to Tripo after ${maxRetries} retries. ${err instanceof Error ? err.message : "Network error"}`);
+          return;
+        }
+        const delayMs = Math.min(15000, 2500 * (2 ** Math.min(retryCount - 1, 3)));
+        setGenerateStatus(`Temporary connection issue; retrying in ${Math.round(delayMs / 1000)}s (${retryCount}/${maxRetries})…`);
+        timer = setTimeout(poll, delayMs);
       }
     };
+
     void poll();
     return () => { cancelled = true; clearTimeout(timer); };
-  },[taskId]);
+  }, [taskId]);
 
   const searchSpecs = async () => {
     if (!printerName.trim()) { setError("Enter the printer name or model first."); return; }
