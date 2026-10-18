@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as tf from "@tensorflow/tfjs";
+import selectorWeights from "../../../data/selector-weights.json";
 import comparisonObjects from "../../../data/comparison-objects.json";
 
 export const runtime = "nodejs";
@@ -35,6 +37,78 @@ const OBJECT_PROMPT_TEMPLATE = [
 
 const OBJECTS = comparisonObjects as ComparisonObject[];
 
+type SelectorWeightLayer = { kernel: number[][]; bias: number[] };
+type SelectorWeightsFile = {
+  trained: boolean;
+  inputSize: number;
+  layers: SelectorWeightLayer[];
+};
+const WEIGHTS = selectorWeights as SelectorWeightsFile;
+
+function createSelectorModel(): tf.LayersModel | null {
+  if (!WEIGHTS.trained || WEIGHTS.inputSize !== 6 || WEIGHTS.layers.length !== 3) return null;
+  const model = tf.sequential();
+  model.add(tf.layers.dense({ inputShape: [6], units: 16, activation: "relu" }));
+  model.add(tf.layers.dense({ units: 8, activation: "relu" }));
+  model.add(tf.layers.dense({ units: 1, activation: "sigmoid" }));
+  const tensors: tf.Tensor[] = [];
+  for (const layer of WEIGHTS.layers) {
+    tensors.push(tf.tensor2d(layer.kernel), tf.tensor1d(layer.bias));
+  }
+  model.setWeights(tensors);
+  tensors.forEach((tensor) => tensor.dispose());
+  return model;
+}
+
+const selectorModel = createSelectorModel();
+
+function selectorFeatures(plateWidth: number, plateDepth: number, object: ComparisonObject): number[] {
+  const plateSpan = Math.max(plateWidth, plateDepth);
+  const objectSpan = Math.max(object.widthMm, object.depthMm);
+  return [
+    Math.log1p(plateWidth) / Math.log1p(300_000),
+    Math.log1p(plateDepth) / Math.log1p(300_000),
+    Math.log1p(object.widthMm) / Math.log1p(300_000),
+    Math.log1p(object.heightMm) / Math.log1p(300_000),
+    Math.log1p(object.depthMm) / Math.log1p(300_000),
+    Math.log1p(objectSpan / plateSpan) / Math.log1p(300_000 / 50)
+  ];
+}
+
+async function chooseComparisonObject(plateWidth: number, plateDepth: number): Promise<ComparisonObject> {
+  const plateSpan = Math.max(plateWidth, plateDepth);
+  const candidates = OBJECTS.filter((item) => {
+    const ratio = Math.max(item.widthMm, item.depthMm) / plateSpan;
+    return ratio >= 0.4 && ratio <= 12;
+  });
+  const pool = candidates.length ? candidates : [OBJECTS.reduce((best, item) => {
+    const score = Math.abs(Math.log(Math.max(item.widthMm, item.depthMm) / plateSpan));
+    const bestScore = Math.abs(Math.log(Math.max(best.widthMm, best.depthMm) / plateSpan));
+    return score < bestScore ? item : best;
+  }, OBJECTS[0])];
+
+  let ranked: Array<{ item: ComparisonObject; score: number }>;
+  if (selectorModel) {
+    const input = tf.tensor2d(pool.map((item) => selectorFeatures(plateWidth, plateDepth, item)));
+    const prediction = selectorModel.predict(input) as tf.Tensor;
+    const scores = Array.from(await prediction.data());
+    input.dispose();
+    prediction.dispose();
+    ranked = pool.map((item, index) => ({ item, score: scores[index] }))
+      .sort((a, b) => b.score - a.score);
+  } else {
+    // Deterministic safe fallback until the first trained weights are committed.
+    ranked = pool.map((item) => ({
+      item,
+      score: Math.exp(-Math.abs(Math.log(Math.max(item.widthMm, item.depthMm) / plateSpan)))
+    })).sort((a, b) => b.score - a.score);
+  }
+
+  const bestScore = ranked[0].score;
+  const nearMatches = ranked.filter((candidate) => candidate.score >= bestScore - 0.06).slice(0, 8);
+  return nearMatches[Math.floor(Math.random() * nearMatches.length)].item;
+}
+
 function buildObjectPrompt(object: ComparisonObject): string {
   const variables: Record<string, string> = {
     OBJECT_DESCRIPTION: object.prompt,
@@ -64,28 +138,7 @@ export async function POST(request: NextRequest) {
   if (!Number.isFinite(width) || !Number.isFinite(depth) || width < 50 || width > 1000 || depth < 50 || depth > 1000) {
     return fail("Build plate width and depth must each be between 50 and 1000 mm.", 400);
   }
-  const plateSpan = Math.max(width, depth);
-  // Compare the plate against the object's footprint, not its vertical height.
-  // Keep the scale object in a useful range but permit very large references
-  // (billboards, buildings, aircraft) when they genuinely help show the plate scale.
-  const suitable = OBJECTS.filter((item) => {
-    const footprintSpan = Math.max(item.widthMm, item.depthMm);
-    const ratio = footprintSpan / plateSpan;
-    return ratio >= 0.4 && ratio <= 12;
-  });
-  const pool = suitable.length ? suitable : [OBJECTS.reduce((best, item) => {
-    const score = Math.abs(Math.log(Math.max(item.widthMm, item.depthMm) / plateSpan));
-    const bestScore = Math.abs(Math.log(Math.max(best.widthMm, best.depthMm) / plateSpan));
-    return score < bestScore ? item : best;
-  }, OBJECTS[0])];
-  // Favor objects whose footprint is closest to the plate, with a small random
-  // choice among near-matches so repeated generations are not identical.
-  const ranked = pool.map((item) => ({
-    item,
-    score: Math.abs(Math.log(Math.max(item.widthMm, item.depthMm) / plateSpan))
-  })).sort((a, b) => a.score - b.score);
-  const nearMatches = ranked.filter((candidate) => candidate.score <= ranked[0].score + 0.55).slice(0, 12);
-  const object = nearMatches[Math.floor(Math.random() * nearMatches.length)].item;
+  const object = await chooseComparisonObject(width, depth);
   const prompt = buildObjectPrompt(object);
   try {
     const response = await fetch("https://openapi.tripo3d.ai/v3/generation/text-to-model", {
